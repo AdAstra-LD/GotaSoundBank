@@ -53,7 +53,6 @@
     <Compile Include="SF2\SampleItem.cs" />
     <Compile Include="SF2\SF2GeneratorAmount.cs" />
     <Compile Include="SF2\SF2Generators.cs" />
-    <Compile Include="SF2\SF2LerpResampler.cs" />
     <Compile Include="SF2\SF2LinkTypes.cs" />
     <Compile Include="SF2\SF2Modulators.cs" />
     <Compile Include="SF2\SF2Resampler.cs" />

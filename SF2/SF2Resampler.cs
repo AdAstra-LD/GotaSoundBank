@@ -6,57 +6,51 @@ using System.Collections.Generic;
 using System.IO;
 
 namespace GotaSoundBank.SF2 {
-    public static class SF2Resampler {
+    /// <summary>
+    /// Base class for SF2 resamplers
+    /// </summary>
+    public abstract class SF2ResamplerBase {
+        protected readonly uint targetSampleRate;
+
+        protected SF2ResamplerBase(uint targetSampleRate = 48000) {
+            this.targetSampleRate = targetSampleRate;
+        }
+
         /// <summary>
-        /// Resamples all samples in the SoundFont to 48000Hz using zero-order-hold interpolation if their sample rate is lower
+        /// Resamples all samples in the SoundFont to the target sample rate if their current rate is lower
         /// </summary>
-        /// <param name="soundFont">The SoundFont to process</param>
-        public static void ResampleTo48k(SoundFont soundFont) {
+        public void Resample(SoundFont soundFont) {
             foreach (var sample in soundFont.Samples) {
-                if (sample.Wave.SampleRate < 48000) {
-                    ResampleWaveZOH(sample);
+                if (sample.Wave.SampleRate < targetSampleRate) {
+                    ResampleWave(sample);
                 }
             }
         }
 
         /// <summary>
-        /// Resamples a single sample to 48000Hz using zero-order-hold interpolation
+        /// Resamples a single sample to the target sample rate
         /// </summary>
-        /// <param name="sample">The sample to resample</param>
-        private static void ResampleWaveZOH(SampleItem sample) {
+        protected void ResampleWave(SampleItem sample) {
             var originalWave = sample.Wave;
-            double ratio = 48000.0 / originalWave.SampleRate;
+            double ratio = (double)targetSampleRate / originalWave.SampleRate;
 
             // Calculate new number of samples
             int newLength = (int)(originalWave.Audio.NumSamples * ratio);
 
             // Create memory stream to hold original data
             using (MemoryStream ms = new MemoryStream()) {
-                // Create writer to get the original data
+                // Get original data
                 using (BinaryWriter writer = new BinaryWriter(ms)) {
-                    // Write the original samples to our stream
                     FileWriter fw = new FileWriter(writer.BaseStream);
                     originalWave.Audio.Write(fw);
 
-                    // Reset stream position for reading
                     ms.Position = 0;
-
-                    // Read samples as 16-bit PCM
                     byte[] originalData = new byte[ms.Length];
                     ms.Read(originalData, 0, (int)ms.Length);
 
-                    // Create resampled data array
-                    byte[] resampledData = new byte[newLength * 2]; // 2 bytes per sample for PCM16
-
-                    // Perform zero-order-hold resampling
-                    for (int i = 0; i < newLength; i++) {
-                        int sourceIndex = (int)(i / ratio);
-                        sourceIndex = Math.Min(sourceIndex, (originalData.Length / 2) - 1);
-
-                        // Copy two bytes (one PCM16 sample) from source to destination
-                        resampledData[i * 2] = originalData[sourceIndex * 2];
-                        resampledData[i * 2 + 1] = originalData[sourceIndex * 2 + 1];
-                    }
+                    // Create and fill resampled data array using the specific interpolation method
+                    byte[] resampledData = new byte[newLength * 2];
+                    ProcessResampling(originalData, resampledData, ratio);
 
                     // Create new wave with resampled data
                     var newWave = new RiffWave() {
@@ -65,7 +59,7 @@ namespace GotaSoundBank.SF2 {
                                 new List<IAudioEncoding>() { new PCM16() }
                             }
                         },
-                        SampleRate = 48000
+                        SampleRate = targetSampleRate
                     };
 
                     // Read the resampled data into the new wave
@@ -81,9 +75,59 @@ namespace GotaSoundBank.SF2 {
                         newWave.LoopEnd = (uint)(originalWave.LoopEnd * ratio);
                     }
 
-                    // Update the sample with new wave
                     sample.Wave = newWave;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Process the resampling using a specific interpolation method
+        /// </summary>
+        protected abstract void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio);
+    }
+
+    /// <summary>
+    /// Zero-order hold (sample repetition) resampler
+    /// </summary>
+    public class SF2ZOHResampler : SF2ResamplerBase {
+        public SF2ZOHResampler(uint targetSampleRate = 48000) : base(targetSampleRate) { }
+
+        protected override void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio) {
+            int newLength = resampledData.Length / 2;
+
+            for (int i = 0; i < newLength; i++) {
+                int sourceIndex = (int)(i / ratio);
+                sourceIndex = Math.Min(sourceIndex, (originalData.Length / 2) - 1);
+
+                resampledData[i * 2] = originalData[sourceIndex * 2];
+                resampledData[i * 2 + 1] = originalData[sourceIndex * 2 + 1];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Linear interpolation resampler
+    /// </summary>
+    public class SF2LerpResampler : SF2ResamplerBase {
+        public SF2LerpResampler(uint targetSampleRate = 48000) : base(targetSampleRate) { }
+
+        protected override void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio) {
+            int newLength = resampledData.Length / 2;
+
+            for (int i = 0; i < newLength; i++) {
+                double exactSourceIndex = i / ratio;
+                int sourceIndex1 = (int)exactSourceIndex;
+                int sourceIndex2 = Math.Min(sourceIndex1 + 1, (originalData.Length / 2) - 1);
+                double fraction = exactSourceIndex - sourceIndex1;
+
+                short sample1 = BitConverter.ToInt16(originalData, sourceIndex1 * 2);
+                short sample2 = BitConverter.ToInt16(originalData, sourceIndex2 * 2);
+
+                short interpolatedSample = (short)(sample1 + (sample2 - sample1) * fraction);
+
+                byte[] interpolatedBytes = BitConverter.GetBytes(interpolatedSample);
+                resampledData[i * 2] = interpolatedBytes[0];
+                resampledData[i * 2 + 1] = interpolatedBytes[1];
             }
         }
     }
