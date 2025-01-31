@@ -59,7 +59,17 @@ namespace GotaSoundBank.SF2 {
             long bak = r.Position;
             r.Position = r.CurrentOffset;
             r.Position += startSample * 2;
-            Wave = new RiffWave() { Audio = new AudioData() { Channels = new List<List<GotaSoundIO.Sound.Encoding.IAudioEncoding>>() { new List<GotaSoundIO.Sound.Encoding.IAudioEncoding>() { new PCM16() } } } };
+
+            Wave = new RiffWave() { 
+                Audio = new AudioData() { 
+                    Channels = new List<List<GotaSoundIO.Sound.Encoding.IAudioEncoding>>() { 
+                        new List<GotaSoundIO.Sound.Encoding.IAudioEncoding>() { 
+                            new PCM16() 
+                        } 
+                    } 
+                } 
+            };
+
             Wave.Audio.Channels[0][0].ReadRaw(r, (uint)((endSample * 2 + r.CurrentOffset - r.Position) / 2), (uint)(endSample * 2 + r.CurrentOffset - r.Position));
             r.Position = bak;
             Wave.LoopStart = r.ReadUInt32();

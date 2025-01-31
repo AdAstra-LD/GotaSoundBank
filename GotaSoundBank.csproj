@@ -53,8 +53,10 @@
     <Compile Include="SF2\SampleItem.cs" />
     <Compile Include="SF2\SF2GeneratorAmount.cs" />
     <Compile Include="SF2\SF2Generators.cs" />
+    <Compile Include="SF2\SF2LerpResampler.cs" />
     <Compile Include="SF2\SF2LinkTypes.cs" />
     <Compile Include="SF2\SF2Modulators.cs" />
+    <Compile Include="SF2\SF2Resampler.cs" />
     <Compile Include="SF2\SF2Transforms.cs" />
     <Compile Include="SF2\SoundFont.cs" />
     <Compile Include="SF2\Zone.cs" />
@@ -64,6 +66,9 @@
       <Project>{F0BCD085-9DC4-4B22-B791-C725CA8E46F6}</Project>
       <Name>GotaSoundIO</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
