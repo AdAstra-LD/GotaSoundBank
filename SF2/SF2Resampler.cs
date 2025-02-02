@@ -11,9 +11,20 @@ namespace GotaSoundBank.SF2 {
     /// </summary>
     public abstract class SF2ResamplerBase {
         protected readonly uint targetSampleRate;
+        protected readonly int targetBitDepth;
 
-        protected SF2ResamplerBase(uint targetSampleRate = 48000) {
+        public static int Clamp(int value, int min, int max) {
+            return Math.Min(Math.Max(value, min), max);
+        }
+
+        /// <summary>
+        /// Creates a new resampler instance
+        /// </summary>
+        /// <param name="targetSampleRate">Target sample rate in Hz</param>
+        /// <param name="targetBitDepth">Target bit depth (1-16). Set to 16 for no requantization</param>
+        protected SF2ResamplerBase(uint targetSampleRate = 48000, int targetBitDepth = 16) {
             this.targetSampleRate = targetSampleRate;
+            this.targetBitDepth = Clamp(targetBitDepth, 1, 16); // PCM16 max
         }
 
         /// <summary>
@@ -21,11 +32,33 @@ namespace GotaSoundBank.SF2 {
         /// </summary>
         public void Resample(SoundFont soundFont) {
             foreach (var sample in soundFont.Samples) {
-                if (sample.Wave.SampleRate < targetSampleRate) {
+                if (this.targetBitDepth < 16 || sample.Wave.SampleRate < targetSampleRate) {
                     ResampleWave(sample);
                 }
             }
         }
+
+        /// <summary>
+        /// Requantizes a 16-bit sample to a lower bit depth and back
+        /// </summary>
+        protected short RequantizeSample(short sample) {
+            // Calculate the number of steps for the target bit depth
+            int steps = (1 << targetBitDepth);
+
+            // Convert the 16-bit sample to the range 0-1
+            double normalizedValue = (sample - short.MinValue) / (double)(ushort.MaxValue);
+
+            // Quantize to the target bit depth
+            int quantized = (int)Math.Round(normalizedValue * steps);
+
+            // Convert back to 16-bit range
+            return (short)(((quantized / (double)steps) * ushort.MaxValue) + short.MinValue);
+        }
+
+        /// <summary>
+        /// Process the resampling using a specific interpolation method
+        /// </summary>
+        protected abstract void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio);
 
         /// <summary>
         /// Resamples a single sample to the target sample rate
@@ -51,6 +84,17 @@ namespace GotaSoundBank.SF2 {
                     // Create and fill resampled data array using the specific interpolation method
                     byte[] resampledData = new byte[newLength * 2];
                     ProcessResampling(originalData, resampledData, ratio);
+
+                    // Apply bit depth reduction if needed
+                    if (targetBitDepth < 16) {
+                        for (int i = 0; i < newLength; i++) {
+                            short sample16 = BitConverter.ToInt16(resampledData, i * 2);
+                            short requantized = RequantizeSample(sample16);
+                            byte[] requantizedBytes = BitConverter.GetBytes(requantized);
+                            resampledData[i * 2] = requantizedBytes[0];
+                            resampledData[i * 2 + 1] = requantizedBytes[1];
+                        }
+                    }
 
                     // Create new wave with resampled data
                     var newWave = new RiffWave() {
@@ -79,18 +123,14 @@ namespace GotaSoundBank.SF2 {
                 }
             }
         }
-
-        /// <summary>
-        /// Process the resampling using a specific interpolation method
-        /// </summary>
-        protected abstract void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio);
     }
 
     /// <summary>
     /// Zero-order hold (sample repetition) resampler
     /// </summary>
     public class SF2ZOHResampler : SF2ResamplerBase {
-        public SF2ZOHResampler(uint targetSampleRate = 48000) : base(targetSampleRate) { }
+        public SF2ZOHResampler(uint targetSampleRate = 48000, int targetBitDepth = 16)
+            : base(targetSampleRate, targetBitDepth) { }
 
         protected override void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio) {
             int newLength = resampledData.Length / 2;
@@ -109,7 +149,8 @@ namespace GotaSoundBank.SF2 {
     /// Linear interpolation resampler
     /// </summary>
     public class SF2LerpResampler : SF2ResamplerBase {
-        public SF2LerpResampler(uint targetSampleRate = 48000) : base(targetSampleRate) { }
+        public SF2LerpResampler(uint targetSampleRate = 48000, int targetBitDepth = 16)
+            : base(targetSampleRate, targetBitDepth) { }
 
         protected override void ProcessResampling(byte[] originalData, byte[] resampledData, double ratio) {
             int newLength = resampledData.Length / 2;
